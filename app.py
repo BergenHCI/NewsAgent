@@ -3,9 +3,12 @@ from openai import OpenAI, RateLimitError
 import backoff
 import feedparser
 import time
+import requests
+import json
 
 
-NRK_RSS_FEED = "https://www.nrk.no/toppsaker.rss"
+# Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
+NRK_RSS_FEED = "https://www.vg.no/rss/feed/" #  "https://www.nrk.no/toppsaker.rss"
 GPT_MODEL = "gpt-3.5-turbo"
 
 
@@ -19,7 +22,7 @@ st.set_page_config(
 with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
     "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
-    assistant_id = st.text_input("Assistant ID", key="assistant_id", type="default")
+    assistant_id = "asst_WJWynqP6q17EbYpyzBMRGMJF" #  st.text_input("Assistant ID", key="assistant_id", type="default")
     if st.button("Reset Session"):
         st.rerun()
 
@@ -31,6 +34,7 @@ def get_client() -> OpenAI:
         st.stop()
     client = OpenAI(api_key=openai_api_key)
     return client
+
 
 @st.cache_resource
 def get_thread():
@@ -61,6 +65,13 @@ def call_tools(run):
             tool_outputs.append({
                 "tool_call_id": tool.id,
                 "output": news
+            })
+        elif tool.function.name == "get_article":
+            st.toast("Getting article")
+            article = get_article(json.loads(tool.function.arguments)["article_id"])
+            tool_outputs.append({
+                "tool_call_id": tool.id,
+                "output": article
             })
     return tool_outputs
 
@@ -128,10 +139,26 @@ def get_feed():
     feed = feedparser.parse(NRK_RSS_FEED)
     return feed
 
+
 def get_news():
     feed = get_feed()
-    news = ["%s %s %s" % (entry['title'], entry['summary'], entry['link']) for entry in feed.entries]
+    news = []
+    for entry in feed.entries:
+        # parse entry id
+        # entry['id']
+        entry_id = entry['id'].split("/")[-1]
+        n_entry = "%s %s Article ID: %s" % (entry['title'], entry['summary'], entry_id)
+        news.append(n_entry)
     return "\n".join(news)
+
+
+def get_article(article_id: str):
+    url = "https://www.vg.no/irisx/v1/articles/%s" % article_id.strip()
+    a = requests.get(url)
+    # check status
+    article = a.json()
+    article_text = "\n".join([comp["text"]["value"] for comp in article["components"] if comp["type"] == "text"])
+    return article_text
 
 
 with st.container():
