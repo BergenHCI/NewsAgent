@@ -2,3 +2,4 @@ streamlit
 openai
 backoff
 feedparser
+requests
