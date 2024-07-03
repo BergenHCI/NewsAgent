@@ -138,10 +138,14 @@ def ask_model(message: str):
 
 
 def reset_session():
-    if "messages" in st.session_state:
-        del st.session_state["messages"]
-    if "thread_id" in st.session_state:
-        del st.session_state["thread_id"]
+    for key in st.session_state:
+        del st.session_state[key]
+    client = get_client()
+    # assistant = get_assistant()
+    thread = get_thread()
+    # cancel all runs
+    for run in client.beta.threads.runs.list():
+        client.beta.threads.runs.cancel(run_id=run.id, thread_id=thread.id)
     st.rerun()
 
 
@@ -175,12 +179,13 @@ def get_article(article_id: str):
 with st.container():
     # Login
     if "pincode" not in st.session_state:
-        pincode = st.number_input("Pincode")
+        pincode = st.number_input("Pincode", min_value=1, max_value=9999, step=1, format="%d")
         if pincode not in pincodes:
             st.warning("Please enter correct pincode")
             st.stop()
         else:
             st.session_state["pincode"] = pincode
+            st.rerun()
     
     # Choose assistant
     if "assistant_id" not in st.session_state:
@@ -189,8 +194,10 @@ with st.container():
             assist_button_2 = st.button("Assistant 2")
             if assist_button_1:
                 st.session_state["assistant_id"] = assistant_1_id
+                st.rerun()
             elif assist_button_2:
                 st.session_state["assistant_id"] = assistant_2_id
+                st.rerun()
             st.stop()
 
     if "messages" not in st.session_state:
