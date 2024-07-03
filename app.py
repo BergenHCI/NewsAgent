@@ -2,6 +2,7 @@ import streamlit as st
 from openai import OpenAI, RateLimitError
 import backoff
 import feedparser
+import wikipedia
 import time
 import requests
 import json
@@ -47,7 +48,6 @@ def get_client() -> OpenAI:
     return client
 
 
-@st.cache_resource
 def get_thread():
     client = get_client()
     
@@ -59,7 +59,6 @@ def get_thread():
     return thread
 
 
-@st.cache_resource
 def get_assistant():
     if not st.session_state["assistant_id"]:
         st.error("Please provide Assistant Id")
@@ -70,20 +69,24 @@ def get_assistant():
 def call_tools(run):
     tool_outputs = []
     for tool in run.required_action.submit_tool_outputs.tool_calls:
-        if tool.function.name == "get_latest_news":
-            st.toast("Getting news")
-            news = get_news()
-            tool_outputs.append({
-                "tool_call_id": tool.id,
-                "output": news
-            })
-        elif tool.function.name == "get_article":
-            st.toast("Getting article")
-            article = get_article(json.loads(tool.function.arguments)["article_id"])
-            tool_outputs.append({
-                "tool_call_id": tool.id,
-                "output": article
-            })
+        output = ""
+        match tool.function.name:
+            case "get_latest_news":
+                st.toast("Getting news")
+                output = get_news()
+            case "get_article":
+                st.toast("Getting article")
+                output = get_article(json.loads(tool.function.arguments)["article_id"])
+            case "search_wiki":
+                st.toast("Searching")
+                output = ", ".join(search_wiki(json.loads(tool.function.arguments)["query"]))
+            case "wiki_summary":
+                st.toast("Getting data from wikipedia")
+                output = ask_wiki(json.loads(tool.function.arguments)["wiki_term"])
+        tool_outputs.append({
+            "tool_call_id": tool.id,
+            "output": output
+        })
     return tool_outputs
 
 
@@ -167,6 +170,7 @@ def get_news():
     return "\n".join(news)
 
 
+@st.cache_data(show_spinner="Getting article..", ttl=60)
 def get_article(article_id: str):
     url = "https://www.vg.no/irisx/v1/articles/%s" % article_id.strip()
     a = requests.get(url)
@@ -175,6 +179,19 @@ def get_article(article_id: str):
     article_text = "\n".join([comp["text"]["value"] for comp in article["components"] if comp["type"] == "text"])
     return article_text
 
+
+@st.cache_data(show_spinner="Searching..", ttl=360)
+def search_wiki(query: str) -> list[str]:
+    return wikipedia.search(query)
+
+
+@st.cache_data(show_spinner="Getting more information..", ttl=360)
+def ask_wiki(query:str) -> str:
+    try:
+        s = wikipedia.summary(query)
+    except wikipedia.PageError:
+        s = "NO DATA FOUND"
+    return s
 
 with st.container():
     # Login
