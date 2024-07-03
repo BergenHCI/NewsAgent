@@ -19,11 +19,22 @@ st.set_page_config(
     initial_sidebar_state="auto")
 
 
+pincodes = st.secrets["PINCODES"]
+openai_api_key = st.secrets["OPENAI_KEY"]
+assistant_1_id = st.secrets["ASSISTANT1_ID"]
+assistant_2_id = st.secrets["ASSISTANT2_ID"]
+
+
+
 with st.sidebar:
-    openai_api_key = st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
-    "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
-    assistant_id = "asst_WJWynqP6q17EbYpyzBMRGMJF" #  st.text_input("Assistant ID", key="assistant_id", type="default")
+
+    # openai_api_key = st.secrets["openai_key"] # # st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
+    # "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
+    # assistant_id = st.secrets["assistant1_id"] "asst_WJWynqP6q17EbYpyzBMRGMJF" #  st.text_input("Assistant ID", key="assistant_id", type="default")
     if st.button("Reset Session"):
+        # stop existing runs
+        # del st.session_state["pincode"]
+        st.session_state.clear()
         st.rerun()
 
 
@@ -50,10 +61,10 @@ def get_thread():
 
 @st.cache_resource
 def get_assistant():
-    if not assistant_id:
+    if not st.session_state["assistant_id"]:
         st.error("Please provide Assistant Id")
         st.stop()
-    return client.beta.assistants.retrieve(assistant_id)
+    return client.beta.assistants.retrieve(st.session_state["assistant_id"])
 
 
 def call_tools(run):
@@ -162,6 +173,26 @@ def get_article(article_id: str):
 
 
 with st.container():
+    # Login
+    if "pincode" not in st.session_state:
+        pincode = st.number_input("Pincode")
+        if pincode not in pincodes:
+            st.warning("Please enter correct pincode")
+            st.stop()
+        else:
+            st.session_state["pincode"] = pincode
+    
+    # Choose assistant
+    if "assistant_id" not in st.session_state:
+        with st.container(border=True):
+            assist_button_1 = st.button("Assistant 1")
+            assist_button_2 = st.button("Assistant 2")
+            if assist_button_1:
+                st.session_state["assistant_id"] = assistant_1_id
+            elif assist_button_2:
+                st.session_state["assistant_id"] = assistant_2_id
+            st.stop()
+
     if "messages" not in st.session_state:
         st.session_state["messages"] = [{"role": "assistant", "content": "Hello. Ask whatever."}]
 
@@ -169,15 +200,6 @@ with st.container():
         st.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input():
-        can_prompt = True
-        if not openai_api_key:
-            st.info("Please add your OpenAI API key to continue.")
-            can_prompt = False
-        if not assistant_id:
-            st.info("Please add Assistant ID to continue.")
-            can_prompt = False
-        if not can_prompt:
-            st.stop()
 
         client = get_client()
         st.session_state["messages"].append({"role": "user", "content": prompt})
@@ -186,5 +208,4 @@ with st.container():
             response = ask_model(prompt)
         for answer in response:
             st.session_state["messages"].append({"role": "assistant", "content": answer})
-        
         st.rerun()
