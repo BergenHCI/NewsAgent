@@ -4,3 +4,5 @@ backoff
 feedparser
 requests
 pymongo
+wikipedia
+
