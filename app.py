@@ -235,6 +235,10 @@ def ask_wiki(query:str) -> str:
         s = wikipedia.summary(query)
     except wikipedia.PageError:
         s = "NO DATA FOUND"
+    except wikipedia.DisambiguationError:
+        s = "Encountered Disambiguation Error"
+    except:
+        s = "Unhandeled Error Occured"
     return s
 
 with st.container():
