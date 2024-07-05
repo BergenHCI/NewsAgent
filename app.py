@@ -3,14 +3,22 @@ from openai import OpenAI, RateLimitError
 import backoff
 import feedparser
 import wikipedia
-import time
+import time, datetime
+import pytz
 import requests
 import json
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 
+OsloTZ = pytz.timezone('Europe/Oslo')
 
 # Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
 NRK_RSS_FEED = "https://www.vg.no/rss/feed/" #  "https://www.nrk.no/toppsaker.rss"
 GPT_MODEL = "gpt-3.5-turbo"
+
+
+ASSISTANT_1_NAME = 'Assistant 1'
+ASSISTANT_2_NAME = 'Assistant 2'
 
 
 st.set_page_config(
@@ -38,6 +46,37 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
+
+@st.cache_resource(ttl=360)
+def get_mongo() -> MongoClient:
+    uri = "mongodb+srv://{db_user}:{db_pass}@{db_host}/?retryWrites=true&w=majority&appName=AtlasCluster".format(
+        db_user = st.secrets['DB_USER'], db_pass = st.secrets['DB_PASSWORD'], db_host = st.secrets['DB_HOST']
+    )
+    # Create a new client and connect to the server
+    mongo_client = MongoClient(uri, server_api=ServerApi('1'))
+    return mongo_client
+
+
+def log_msg(msg:str, is_action = False, is_user= True):
+    mongo = get_mongo()
+    db = mongo[st.secrets["DB_NAME"]]
+    logs_collection = db['logs']
+    logs_collection.insert_one({
+        'datetime': datetime.datetime.now(OsloTZ),
+        'pincode': st.session_state.get('pincode', ''),
+        'assistant_id': st.session_state.get('assistant_id', ''),
+        'assistant': st.session_state.get('assistant', ''),
+        'msg': msg,
+        'is_user': is_user,
+        'is_action': is_action
+    })
+    pass
+
+def log_action(act:str):
+    log_msg(act, True)
+
+def log_reply(msg:str):
+    log_msg(msg, is_user= False)
 
 @st.cache_resource
 def get_client() -> OpenAI:
@@ -70,6 +109,7 @@ def call_tools(run):
     tool_outputs = []
     for tool in run.required_action.submit_tool_outputs.tool_calls:
         output = ""
+        log_action("Calling tool: %s" % tool.function.name)
         match tool.function.name:
             case "get_latest_news":
                 st.toast("Getting news")
@@ -121,6 +161,8 @@ def ask_model(message: str):
     assistant = get_assistant()
     thread = get_thread()
     
+    log_msg(message)
+
     message = client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
@@ -137,10 +179,12 @@ def ask_model(message: str):
         thread_id=thread.id, order="asc", after=message.id
     )
     response = [m.content[0].text.value for m in messages]
+    log_reply("\n".join(response))
     return response
 
 
 def reset_session():
+    log_action('RESET SESSION')
     for key in st.session_state:
         del st.session_state[key]
     client = get_client()
@@ -207,13 +251,15 @@ with st.container():
     # Choose assistant
     if "assistant_id" not in st.session_state:
         with st.container(border=True):
-            assist_button_1 = st.button("Assistant 1")
-            assist_button_2 = st.button("Assistant 2")
+            assist_button_1 = st.button(ASSISTANT_1_NAME)
+            assist_button_2 = st.button(ASSISTANT_2_NAME)
             if assist_button_1:
                 st.session_state["assistant_id"] = assistant_1_id
+                st.session_state['assistant'] = ASSISTANT_1_NAME
                 st.rerun()
             elif assist_button_2:
                 st.session_state["assistant_id"] = assistant_2_id
+                st.session_state['assistant'] = ASSISTANT_2_NAME
                 st.rerun()
             st.stop()
 

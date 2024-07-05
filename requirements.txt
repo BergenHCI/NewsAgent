@@ -3,3 +3,4 @@ openai
 backoff
 feedparser
 requests
+pymongo
