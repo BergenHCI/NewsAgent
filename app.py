@@ -64,8 +64,8 @@ def log_msg(msg:str, is_action = False, is_user= True):
     logs_collection.insert_one({
         'datetime': datetime.datetime.now(OsloTZ),
         'pincode': st.session_state.get('pincode', ''),
-        'assistant_id': st.session_state.get('assistant_id', ''),
-        'assistant': st.session_state.get('assistant', ''),
+        # 'assistant_id': st.session_state.get('assistant_id', ''),
+        # 'assistant': st.session_state.get('assistant', ''),
         'msg': msg,
         'is_user': is_user,
         'is_action': is_action
@@ -99,10 +99,10 @@ def get_thread():
 
 
 def get_assistant():
-    if not st.session_state["assistant_id"]:
-        st.error("Please provide Assistant Id")
-        st.stop()
-    return client.beta.assistants.retrieve(st.session_state["assistant_id"])
+    # if not st.session_state["assistant_id"]:
+    #     st.error("Please provide Assistant Id")
+    #     st.stop()
+    return client.beta.assistants.retrieve(assistant_1_id)
 
 
 def call_tools(run):
@@ -253,19 +253,19 @@ with st.container():
             st.rerun()
     
     # Choose assistant
-    if "assistant_id" not in st.session_state:
-        with st.container(border=True):
-            assist_button_1 = st.button(ASSISTANT_1_NAME)
-            assist_button_2 = st.button(ASSISTANT_2_NAME)
-            if assist_button_1:
-                st.session_state["assistant_id"] = assistant_1_id
-                st.session_state['assistant'] = ASSISTANT_1_NAME
-                st.rerun()
-            elif assist_button_2:
-                st.session_state["assistant_id"] = assistant_2_id
-                st.session_state['assistant'] = ASSISTANT_2_NAME
-                st.rerun()
-            st.stop()
+    # if "assistant_id" not in st.session_state:
+    #     with st.container(border=True):
+    #         assist_button_1 = st.button(ASSISTANT_1_NAME)
+    #         assist_button_2 = st.button(ASSISTANT_2_NAME)
+    #         if assist_button_1:
+    #             st.session_state["assistant_id"] = assistant_1_id
+    #             st.session_state['assistant'] = ASSISTANT_1_NAME
+    #             st.rerun()
+    #         elif assist_button_2:
+    #             st.session_state["assistant_id"] = assistant_2_id
+    #             st.session_state['assistant'] = ASSISTANT_2_NAME
+    #             st.rerun()
+    #         st.stop()
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = [{"role": "assistant", "content": "Hello. Ask whatever."}]
