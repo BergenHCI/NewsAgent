@@ -9,16 +9,48 @@ import requests
 import json
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+import urllib
 
 OsloTZ = pytz.timezone('Europe/Oslo')
 
+
 # Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
-NRK_RSS_FEED = "https://www.vg.no/rss/feed/" #  "https://www.nrk.no/toppsaker.rss"
-GPT_MODEL = "gpt-3.5-turbo"
+# https://www.vg.no/rss/feed/?categories=&keywords=politik&format=rss&limit=10
+RSS_FEED = "https://www.vg.no/rss/feed/" #  "https://www.nrk.no/toppsaker.rss"
+# GPT_MODEL = "gpt-3.5-turbo"
 
 
 ASSISTANT_1_NAME = 'Assistant 1'
 ASSISTANT_2_NAME = 'Assistant 2'
+
+
+INTRO_MSG = """Hei!
+Jeg er Falk, din nye nyhetsassistent fra VG.
+Min oppgave er å holde deg oppdatert på nyhetene fra VG gjennom en engasjerende chat-samtale. Jeg håper å skape meningsfulle diskusjoner og gi deg innsikt i aktuelle hendelser.
+Jeg oppfordrer deg til å stille spørsmål om nyhetene, dele dine meninger og tanker, eller foreslå annet innhold du er nysgjerrig på. Jeg er her for å hjelpe deg med å holde deg oppdatert og engasjert.
+Nyhetene jeg deler, er basert på VG sine artikler. Hvis du har spørsmål om noe som ikke dekkes i artiklene, bruker jeg Wikipedia for å finne svar. La oss sammen utforske de siste nyhetene og ha innsiktsfulle samtaler om hva som skjer i verden!
+La oss bli litt bedre kjent før vi kommer i gang med nyhetene."""
+
+INTRO_USER_NAME = " Hva vil du at jeg skal kalle deg?"
+
+
+VG_CATEGORIES = {
+    "Film": 1097,
+    "Books": 1099,
+    "Music": 1098,
+    "TV": 1100,
+    "Opinions": 1071,
+    "Sports": 1072,
+    "Football": 1073,
+    "Handball": 1074,
+    "Ice Hockey": 1075,
+    "Cross-country Skiing": 1076,
+    "Cycling": 1077,
+    "Motorsports": 1079,
+    "Athletics": 1080,
+    "Ski Jumping": 1081,
+    "Biathlon": 1081
+}
 
 
 st.set_page_config(
@@ -34,7 +66,6 @@ assistant_1_id = st.secrets["ASSISTANT1_ID"]
 assistant_2_id = st.secrets["ASSISTANT2_ID"]
 
 
-
 with st.sidebar:
 
     # openai_api_key = st.secrets["openai_key"] # # st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
@@ -47,7 +78,7 @@ with st.sidebar:
         st.rerun()
 
 
-@st.cache_resource(ttl=360)
+@st.cache_resource(ttl=3600)
 def get_mongo() -> MongoClient:
     uri = "mongodb+srv://{db_user}:{db_pass}@{db_host}/?retryWrites=true&w=majority&appName=AtlasCluster".format(
         db_user = st.secrets['DB_USER'], db_pass = st.secrets['DB_PASSWORD'], db_host = st.secrets['DB_HOST']
@@ -63,14 +94,14 @@ def log_msg(msg:str, is_action = False, is_user= True):
     logs_collection = db['logs']
     logs_collection.insert_one({
         'datetime': datetime.datetime.now(OsloTZ),
-        'pincode': st.session_state.get('pincode', ''),
+        'pincode': st.session_state.get('pincode', 0),
         # 'assistant_id': st.session_state.get('assistant_id', ''),
         # 'assistant': st.session_state.get('assistant', ''),
         'msg': msg,
         'is_user': is_user,
         'is_action': is_action
     })
-    pass
+
 
 def log_action(act:str):
     log_msg(act, True)
@@ -78,7 +109,7 @@ def log_action(act:str):
 def log_reply(msg:str):
     log_msg(msg, is_user= False)
 
-@st.cache_resource
+@st.cache_resource(ttl=3600)
 def get_client() -> OpenAI:
     if not openai_api_key:
         st.error("Please provide Open AI API key first")
@@ -102,6 +133,7 @@ def get_assistant():
     # if not st.session_state["assistant_id"]:
     #     st.error("Please provide Assistant Id")
     #     st.stop()
+    client = get_client()
     return client.beta.assistants.retrieve(assistant_1_id)
 
 
@@ -111,9 +143,9 @@ def call_tools(run):
         output = ""
         log_action("Calling tool: %s" % tool.function.name)
         match tool.function.name:
-            case "get_latest_news":
+            case "get_news":
                 st.toast("Getting news")
-                output = get_news()
+                output = get_news(json.loads(tool.function.arguments).get("category", ""))
             case "get_article":
                 st.toast("Getting article")
                 output = get_article(json.loads(tool.function.arguments)["article_id"])
@@ -123,6 +155,12 @@ def call_tools(run):
             case "wiki_summary":
                 st.toast("Getting data from wikipedia")
                 output = ask_wiki(json.loads(tool.function.arguments)["wiki_term"])
+            case "register_user_name":
+                st.toast("Recording user name")
+                output = register_user_name(json.loads(tool.function.arguments).get("name", ""))
+            case "get_user_name":
+                st.toast("Loading user data")
+                output = get_user_name()
         tool_outputs.append({
             "tool_call_id": tool.id,
             "output": output
@@ -132,6 +170,7 @@ def call_tools(run):
 
 def wait_on_run(run, thread):
     done = False
+    client = get_client()
     while not done:
         run = client.beta.threads.runs.retrieve(
             thread_id=thread.id,
@@ -171,8 +210,8 @@ def ask_model(message: str):
     
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
-        assistant_id=assistant.id,
-        model=GPT_MODEL
+        assistant_id=assistant.id #,
+        # model=GPT_MODEL
     )
     wait_on_run(run, thread)
     messages = client.beta.threads.messages.list(
@@ -196,14 +235,41 @@ def reset_session():
     st.rerun()
 
 
-@st.cache_data(show_spinner="Getting the news..", ttl=60)
-def get_feed():
-    feed = feedparser.parse(NRK_RSS_FEED)
+def register_user_name(name = ""):
+    pincode = st.session_state.get('pincode')
+    if pincode:
+        mongo = get_mongo()
+        db = mongo[st.secrets["DB_NAME"]]
+        users_collection = db['users']
+        users_collection.update_one({"pincode": pincode}, {"$set": {"name": name}}, upsert=True)
+    return "Registered"
+
+
+def get_user_name() -> str:
+    pincode = st.session_state.get('pincode')
+    if pincode:
+        mongo = get_mongo()
+        db = mongo[st.secrets["DB_NAME"]]
+        users_collection = db['users']
+        user_data = users_collection.find_one({"pincode": pincode})
+        if user_data:
+            return user_data.get('name', '')
+    return ""
+
+# @st.cache_data(show_spinner="Getting the news..", ttl=600)
+def get_feed(category=""):
+    rss_feed_url = RSS_FEED
+    params = {"limit": 20}
+    if category:
+        category_key = VG_CATEGORIES.get(category)
+        if category_key:
+            params["categories"] = category_key
+    feed = feedparser.parse(rss_feed_url + urllib.parse.urlencode(params))
     return feed
 
 
-def get_news():
-    feed = get_feed()
+def get_news(category=""):
+    feed = get_feed(category)
     news = []
     for entry in feed.entries:
         # parse entry id
@@ -214,7 +280,7 @@ def get_news():
     return "\n".join(news)
 
 
-@st.cache_data(show_spinner="Getting article..", ttl=60)
+# @st.cache_data(show_spinner="Getting article..", ttl=600)
 def get_article(article_id: str):
     url = "https://www.vg.no/irisx/v1/articles/%s" % article_id.strip()
     a = requests.get(url)
@@ -224,12 +290,12 @@ def get_article(article_id: str):
     return article_text
 
 
-@st.cache_data(show_spinner="Searching..", ttl=360)
+# @st.cache_data(show_spinner="Searching..", ttl=3600)
 def search_wiki(query: str) -> list[str]:
     return wikipedia.search(query)
 
 
-@st.cache_data(show_spinner="Getting more information..", ttl=360)
+# @st.cache_data(show_spinner="Getting more information..", ttl=3600)
 def ask_wiki(query:str) -> str:
     try:
         s = wikipedia.summary(query)
@@ -250,25 +316,19 @@ with st.container():
             st.stop()
         else:
             st.session_state["pincode"] = pincode
+            # get user name
+            st.session_state['user_name'] = get_user_name()
             st.rerun()
-    
-    # Choose assistant
-    # if "assistant_id" not in st.session_state:
-    #     with st.container(border=True):
-    #         assist_button_1 = st.button(ASSISTANT_1_NAME)
-    #         assist_button_2 = st.button(ASSISTANT_2_NAME)
-    #         if assist_button_1:
-    #             st.session_state["assistant_id"] = assistant_1_id
-    #             st.session_state['assistant'] = ASSISTANT_1_NAME
-    #             st.rerun()
-    #         elif assist_button_2:
-    #             st.session_state["assistant_id"] = assistant_2_id
-    #             st.session_state['assistant'] = ASSISTANT_2_NAME
-    #             st.rerun()
-    #         st.stop()
 
+    is_user_introduced = False
     if "messages" not in st.session_state:
-        st.session_state["messages"] = [{"role": "assistant", "content": "Hello. Ask whatever."}]
+        intro_message = INTRO_MSG
+        if not st.session_state.get('user_name'):
+            intro_message += INTRO_USER_NAME
+        else:
+            intro_message = "Hei %s" % st.session_state.get('user_name', '')
+            is_user_introduced = True
+        st.session_state["messages"] = [{"role": "assistant", "content": intro_message}]
 
     for msg in st.session_state["messages"]:
         st.chat_message(msg["role"]).write(msg["content"])
