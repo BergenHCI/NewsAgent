@@ -142,25 +142,34 @@ def call_tools(run):
     for tool in run.required_action.submit_tool_outputs.tool_calls:
         output = ""
         log_action("Calling tool: %s" % tool.function.name)
-        match tool.function.name:
-            case "get_news":
-                st.toast("Getting news")
-                output = get_news(json.loads(tool.function.arguments).get("category", ""))
-            case "get_article":
-                st.toast("Getting article")
-                output = get_article(json.loads(tool.function.arguments)["article_id"])
-            case "search_wiki":
-                st.toast("Searching")
-                output = ", ".join(search_wiki(json.loads(tool.function.arguments)["query"]))
-            case "wiki_summary":
-                st.toast("Getting data from wikipedia")
-                output = ask_wiki(json.loads(tool.function.arguments)["wiki_term"])
-            case "register_user_name":
-                st.toast("Recording user name")
-                output = register_user_name(json.loads(tool.function.arguments).get("name", ""))
-            case "get_user_name":
-                st.toast("Loading user data")
-                output = get_user_name()
+        try:
+            match tool.function.name:
+                case "get_news":
+                    st.toast("Getting news")
+                    output = get_news(json.loads(tool.function.arguments).get("category", ""))
+                case "get_article":
+                    st.toast("Getting article")
+                    output = get_article(json.loads(tool.function.arguments)["article_id"])
+                case "search_wiki":
+                    st.toast("Searching")
+                    output = ", ".join(search_wiki(json.loads(tool.function.arguments)["query"]))
+                case "wiki_summary":
+                    st.toast("Getting data from wikipedia")
+                    output = ask_wiki(json.loads(tool.function.arguments)["wiki_term"])
+                case "register_user_name":
+                    st.toast("Recording user name")
+                    output = register_user_name(json.loads(tool.function.arguments).get("name", ""))
+                case "get_user_name":
+                    st.toast("Loading user data")
+                    output = get_user_name()
+                case "register_user_interests":
+                    st.toast("Saving preferences")
+                    output = register_user_interests(json.loads(tool.function.arguments).get("interests", ""))
+                case "get_user_interests":
+                    st.toast("Loading preferences")
+                    output = get_user_interests()
+        except Exception as inst:
+            output = "ERROR CALLING A TOOL"
         tool_outputs.append({
             "tool_call_id": tool.id,
             "output": output
@@ -195,18 +204,24 @@ def wait_on_run(run, thread):
     return run
 
 
-def ask_model(message: str):
+def ask_model(prompt: str):
     client = get_client()
     assistant = get_assistant()
     thread = get_thread()
     
-    log_msg(message)
+    log_msg(prompt)
 
-    message = client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=message,
-    )
+    try:
+        message = client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=prompt,
+        )
+    except:
+        # Probably, a previous run is still working, maybe there was an error in calling a tool.
+        st.error("Error while asking AI Assistant. Please reset the session to try again.")
+        st.stop()
+        pass
     
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
@@ -256,6 +271,28 @@ def get_user_name() -> str:
             return user_data.get('name', '')
     return ""
 
+
+def register_user_interests(interests = ""):
+    pincode = st.session_state.get('pincode')
+    if pincode:
+        mongo = get_mongo()
+        db = mongo[st.secrets["DB_NAME"]]
+        users_collection = db['interests']
+        users_collection.update_one({"pincode": pincode}, {"$set": {"interests": interests}}, upsert=True)
+    return "Registered"
+
+
+def get_user_interests() -> str:
+    pincode = st.session_state.get('pincode')
+    if pincode:
+        mongo = get_mongo()
+        db = mongo[st.secrets["DB_NAME"]]
+        users_collection = db['interests']
+        user_data = users_collection.find_one({"pincode": pincode})
+        if user_data:
+            return user_data.get('interests', '')
+    return ""
+
 # @st.cache_data(show_spinner="Getting the news..", ttl=600)
 def get_feed(category=""):
     rss_feed_url = RSS_FEED
@@ -286,6 +323,8 @@ def get_article(article_id: str):
     a = requests.get(url)
     # check status
     article = a.json()
+    if "components" not in article:
+        return "ERROR GETTING ARTICLE"
     article_text = "\n".join([comp["text"]["value"] for comp in article["components"] if comp["type"] == "text"])
     return article_text
 
