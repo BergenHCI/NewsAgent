@@ -4,7 +4,7 @@ from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import urllib
 import dateparser
-import tomllib
+import toml
 import datetime
 
 # Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
@@ -13,9 +13,7 @@ RSS_FEED = "https://www.vg.no/rss/feed/?" #  "https://www.nrk.no/toppsaker.rss"
 
 NEWS = "newsfeed"
 
-with open(".streamlit/secrets.toml", "rb") as f:
-    secrets = tomllib.load(f)
-
+secrets = toml.load(".streamlit/secrets.toml")
 
 def get_mongo() -> MongoClient:
     uri = "mongodb+srv://{db_user}:{db_pass}@{db_host}/?retryWrites=true&w=majority&appName=AtlasCluster".format(
