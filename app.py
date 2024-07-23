@@ -7,16 +7,23 @@ import time, datetime
 import pytz
 import requests
 import json
+import pymongo
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 import urllib
 
+
 OsloTZ = pytz.timezone('Europe/Oslo')
 
+# Mongo collection names
+NEWS = "newsfeed"
+LOGS = "logs"
+USERS = "users"
+INTERESTS = "interests"
 
 # Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
 # https://www.vg.no/rss/feed/?categories=&keywords=politik&format=rss&limit=10
-RSS_FEED = "https://www.vg.no/rss/feed/" #  "https://www.nrk.no/toppsaker.rss"
+RSS_FEED = "https://www.vg.no/rss/feed/?" #  "https://www.nrk.no/toppsaker.rss"
 # GPT_MODEL = "gpt-3.5-turbo"
 
 
@@ -33,6 +40,7 @@ La oss bli litt bedre kjent før vi kommer i gang med nyhetene."""
 
 INTRO_USER_NAME = " Hva vil du at jeg skal kalle deg?"
 
+RETURN_MSG = "Hi again %s!"
 
 VG_CATEGORIES = {
     "Film": 1097,
@@ -67,7 +75,6 @@ assistant_2_id = st.secrets["ASSISTANT2_ID"]
 
 
 with st.sidebar:
-
     # openai_api_key = st.secrets["openai_key"] # # st.text_input("OpenAI API Key", key="chatbot_api_key", type="password")
     # "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
     # assistant_id = st.secrets["assistant1_id"] "asst_WJWynqP6q17EbYpyzBMRGMJF" #  st.text_input("Assistant ID", key="assistant_id", type="default")
@@ -88,10 +95,16 @@ def get_mongo() -> MongoClient:
     return mongo_client
 
 
-def log_msg(msg:str, is_action = False, is_user= True):
+@st.cache_resource(ttl=600)
+def get_db():
     mongo = get_mongo()
     db = mongo[st.secrets["DB_NAME"]]
-    logs_collection = db['logs']
+    return db
+
+
+def log_msg(msg:str, is_action = False, is_user= True):
+    db = get_db()
+    logs_collection = db[LOGS]
     logs_collection.insert_one({
         'datetime': datetime.datetime.now(OsloTZ),
         'pincode': st.session_state.get('pincode', 0),
@@ -102,12 +115,12 @@ def log_msg(msg:str, is_action = False, is_user= True):
         'is_action': is_action
     })
 
-
 def log_action(act:str):
     log_msg(act, True)
 
 def log_reply(msg:str):
     log_msg(msg, is_user= False)
+
 
 @st.cache_resource(ttl=3600)
 def get_client() -> OpenAI:
@@ -144,17 +157,20 @@ def call_tools(run):
         log_action("Calling tool: %s" % tool.function.name)
         try:
             match tool.function.name:
+                case "get_categories":
+                    st.toast("Getting categories")
+                    output = get_categories()
                 case "get_news":
                     st.toast("Getting news")
-                    output = get_news(json.loads(tool.function.arguments).get("category", ""))
+                    output = get_news(json.loads(tool.function.arguments).get("category", ""), json.loads(tool.function.arguments).get("search_term", ""))
                 case "get_article":
                     st.toast("Getting article")
                     output = get_article(json.loads(tool.function.arguments)["article_id"])
                 case "search_wiki":
-                    st.toast("Searching")
-                    output = ", ".join(search_wiki(json.loads(tool.function.arguments)["query"]))
+                    st.toast("Searching Wikipedia")
+                    output = search_wiki(json.loads(tool.function.arguments)["query"])
                 case "wiki_summary":
-                    st.toast("Getting data from wikipedia")
+                    st.toast("Getting data from Wikipedia")
                     output = ask_wiki(json.loads(tool.function.arguments)["wiki_term"])
                 case "register_user_name":
                     st.toast("Recording user name")
@@ -169,6 +185,7 @@ def call_tools(run):
                     st.toast("Loading preferences")
                     output = get_user_interests()
         except Exception as inst:
+            st.error(str(inst))
             output = "ERROR CALLING A TOOL"
         tool_outputs.append({
             "tool_call_id": tool.id,
@@ -253,9 +270,8 @@ def reset_session():
 def register_user_name(name = ""):
     pincode = st.session_state.get('pincode')
     if pincode:
-        mongo = get_mongo()
-        db = mongo[st.secrets["DB_NAME"]]
-        users_collection = db['users']
+        db = get_db()
+        users_collection = db[USERS]
         users_collection.update_one({"pincode": pincode}, {"$set": {"name": name}}, upsert=True)
     return "Registered"
 
@@ -263,9 +279,8 @@ def register_user_name(name = ""):
 def get_user_name() -> str:
     pincode = st.session_state.get('pincode')
     if pincode:
-        mongo = get_mongo()
-        db = mongo[st.secrets["DB_NAME"]]
-        users_collection = db['users']
+        db = get_db()
+        users_collection = db[USERS]
         user_data = users_collection.find_one({"pincode": pincode})
         if user_data:
             return user_data.get('name', '')
@@ -275,9 +290,8 @@ def get_user_name() -> str:
 def register_user_interests(interests = ""):
     pincode = st.session_state.get('pincode')
     if pincode:
-        mongo = get_mongo()
-        db = mongo[st.secrets["DB_NAME"]]
-        users_collection = db['interests']
+        db = get_db()
+        users_collection = db[INTERESTS]
         users_collection.update_one({"pincode": pincode}, {"$set": {"interests": interests}}, upsert=True)
     return "Registered"
 
@@ -285,36 +299,37 @@ def register_user_interests(interests = ""):
 def get_user_interests() -> str:
     pincode = st.session_state.get('pincode')
     if pincode:
-        mongo = get_mongo()
-        db = mongo[st.secrets["DB_NAME"]]
-        users_collection = db['interests']
+        db = get_db()
+        users_collection = db[INTERESTS]
         user_data = users_collection.find_one({"pincode": pincode})
         if user_data:
             return user_data.get('interests', '')
     return ""
 
-# @st.cache_data(show_spinner="Getting the news..", ttl=600)
-def get_feed(category=""):
-    rss_feed_url = RSS_FEED
-    params = {"limit": 20}
+
+def get_categories():
+    # get a list of possible categories for news
+    db = get_db()
+    news_collection = db[NEWS]
+    return "\n".join(news_collection.distinct('category'))
+
+
+def get_news(category="", search_term=""):
+    db = get_db()
+    news_collection = db[NEWS]
+    filters = {}
     if category:
-        category_key = VG_CATEGORIES.get(category)
-        if category_key:
-            params["categories"] = category_key
-    feed = feedparser.parse(rss_feed_url + urllib.parse.urlencode(params))
-    return feed
+        filters['category'] = category
+    elif search_term:
+        filters["$text"] = {"$search": search_term}
+    entries = news_collection.find(filters).sort({"date": pymongo.DESCENDING}).limit(20)
 
-
-def get_news(category=""):
-    feed = get_feed(category)
-    news = []
-    for entry in feed.entries:
-        # parse entry id
-        # entry['id']
-        entry_id = entry['id'].split("/")[-1]
-        n_entry = "%s %s Article ID: %s" % (entry['title'], entry['summary'], entry_id)
-        news.append(n_entry)
-    return "\n".join(news)
+    news_entries = []
+    for entry in entries:
+        news_entries.append(
+            "{title}: {summary}. Article ID: {id}".format(**entry)
+        )
+    return "\n".join(news_entries)
 
 
 # @st.cache_data(show_spinner="Getting article..", ttl=600)
@@ -330,8 +345,9 @@ def get_article(article_id: str):
 
 
 # @st.cache_data(show_spinner="Searching..", ttl=3600)
-def search_wiki(query: str) -> list[str]:
-    return wikipedia.search(query)
+def search_wiki(query: str) -> str:
+    results = wikipedia.search(query)
+    return ", ".join(results)
 
 
 # @st.cache_data(show_spinner="Getting more information..", ttl=3600)
@@ -346,6 +362,8 @@ def ask_wiki(query:str) -> str:
         s = "Unhandeled Error Occured"
     return s
 
+
+# Main page
 with st.container():
     # Login
     if "pincode" not in st.session_state:
@@ -365,7 +383,7 @@ with st.container():
         if not st.session_state.get('user_name'):
             intro_message += INTRO_USER_NAME
         else:
-            intro_message = "Hei %s" % st.session_state.get('user_name', '')
+            intro_message = RETURN_MSG % st.session_state.get('user_name', '')
             is_user_introduced = True
         st.session_state["messages"] = [{"role": "assistant", "content": intro_message}]
 
