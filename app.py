@@ -21,11 +21,6 @@ LOGS = "logs"
 USERS = "users"
 INTERESTS = "interests"
 
-# Use VG since they got API, got it from https://loop24.no/loopsign/rss-feeds/
-# https://www.vg.no/rss/feed/?categories=&keywords=politik&format=rss&limit=10
-RSS_FEED = "https://www.vg.no/rss/feed/?" #  "https://www.nrk.no/toppsaker.rss"
-# GPT_MODEL = "gpt-3.5-turbo"
-
 
 ASSISTANT_1_NAME = 'Assistant 1'
 ASSISTANT_2_NAME = 'Assistant 2'
@@ -41,24 +36,6 @@ La oss bli litt bedre kjent før vi kommer i gang med nyhetene."""
 INTRO_USER_NAME = " Hva vil du at jeg skal kalle deg?"
 
 RETURN_MSG = "Hi again %s!"
-
-VG_CATEGORIES = {
-    "Film": 1097,
-    "Books": 1099,
-    "Music": 1098,
-    "TV": 1100,
-    "Opinions": 1071,
-    "Sports": 1072,
-    "Football": 1073,
-    "Handball": 1074,
-    "Ice Hockey": 1075,
-    "Cross-country Skiing": 1076,
-    "Cycling": 1077,
-    "Motorsports": 1079,
-    "Athletics": 1080,
-    "Ski Jumping": 1081,
-    "Biathlon": 1081
-}
 
 
 st.set_page_config(
@@ -242,8 +219,7 @@ def ask_model(prompt: str):
     
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
-        assistant_id=assistant.id #,
-        # model=GPT_MODEL
+        assistant_id=assistant.id
     )
     wait_on_run(run, thread)
     messages = client.beta.threads.messages.list(

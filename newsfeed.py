@@ -62,6 +62,7 @@ def update_news():
     news = get_news_from_rss(latest_date)
     # save to mongo
     if news:
+        print("%s: Adding %d records" % (str(datetime.datetime.now()), len(news)))
         news_collection.insert_many(news)
         news_collection.create_index([('title', 'text'), ('summary', 'text')])
 
