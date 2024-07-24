@@ -48,8 +48,7 @@ st.set_page_config(
 
 pincodes = st.secrets["PINCODES"]
 openai_api_key = st.secrets["OPENAI_KEY"]
-assistant_1_id = st.secrets["ASSISTANT1_ID"]
-assistant_2_id = st.secrets["ASSISTANT2_ID"]
+assistant_id = st.secrets["ASSISTANT1_ID"]
 
 
 with st.sidebar:
@@ -125,7 +124,7 @@ def get_assistant():
     #     st.error("Please provide Assistant Id")
     #     st.stop()
     client = get_client()
-    return client.beta.assistants.retrieve(assistant_1_id)
+    return client.beta.assistants.retrieve(assistant_id)
 
 
 def call_tools(run):
