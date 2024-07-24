@@ -35,7 +35,7 @@ La oss bli litt bedre kjent før vi kommer i gang med nyhetene."""
 
 INTRO_USER_NAME = " Hva vil du at jeg skal kalle deg?"
 
-RETURN_MSG = "Hi again %s!"
+RETURN_MSG = "Hei, %s! Ønsker du å bli oppdatert på siste nytt?"
 
 
 st.set_page_config(
