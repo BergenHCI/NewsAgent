@@ -27,13 +27,14 @@ ASSISTANT_2_NAME = 'Assistant 2'
 
 
 INTRO_MSG = """Hei!
-Jeg er Falk, din nye nyhetsassistent fra VG.
-Min oppgave er å holde deg oppdatert på nyhetene fra VG gjennom en engasjerende chat-samtale. Jeg håper å skape meningsfulle diskusjoner og gi deg innsikt i aktuelle hendelser.
-Jeg oppfordrer deg til å stille spørsmål om nyhetene, dele dine meninger og tanker, eller foreslå annet innhold du er nysgjerrig på. Jeg er her for å hjelpe deg med å holde deg oppdatert og engasjert.
-Nyhetene jeg deler, er basert på VG sine artikler. Hvis du har spørsmål om noe som ikke dekkes i artiklene, bruker jeg Wikipedia for å finne svar. La oss sammen utforske de siste nyhetene og ha innsiktsfulle samtaler om hva som skjer i verden!
-La oss bli litt bedre kjent før vi kommer i gang med nyhetene."""
 
-INTRO_USER_NAME = " Hva vil du at jeg skal kalle deg?"
+Jeg er Falk, din nye nyhetsassistent fra VG. Min oppgave er å holde deg oppdatert på nyhetene fra VG gjennom en engasjerende chat-samtale.
+
+Jeg håper å skape meningsfulle diskusjoner og gi deg innsikt i aktuelle hendelser. Jeg oppfordrer deg til å stille spørsmål om nyhetene, dele dine meninger og tanker, eller foreslå annet innhold du er nysgjerrig på.
+
+Nyhetene jeg deler, er basert på VG sine artikler. Hvis du har spørsmål om noe som ikke dekkes i artiklene, bruker jeg Wikipedia for å finne svar. La oss sammen utforske de siste nyhetene og ha innsiktsfulle samtaler om hva som skjer i verden!
+
+La oss bli litt bedre kjent før vi kommer i gang med nyhetene. Hva vil du at jeg skal kalle deg?"""
 
 RETURN_MSG = "Hei, %s! Ønsker du å bli oppdatert på siste nytt?"
 
@@ -355,9 +356,8 @@ with st.container():
 
     is_user_introduced = False
     if "messages" not in st.session_state:
-        intro_message = INTRO_MSG
         if not st.session_state.get('user_name'):
-            intro_message += INTRO_USER_NAME
+            intro_message = INTRO_MSG
         else:
             intro_message = RETURN_MSG % st.session_state.get('user_name', '')
             is_user_introduced = True
